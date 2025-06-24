@@ -1,5 +1,5 @@
 FROM --platform=$BUILDPLATFORM docker.io/library/rust:latest AS builder
-ARG BUILDPLATFORM=linux/amd64
+ARG BUILDPLATFORM
 ARG ARCH=x86_64
 ARG ALIYUN=false
 ARG NEBULA_CA_PLUGIN=false

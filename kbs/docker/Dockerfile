@@ -1,5 +1,5 @@
 FROM --platform=$BUILDPLATFORM docker.io/library/rust:slim AS builder
-ARG BUILDPLATFORM=linux/amd64
+ARG BUILDPLATFORM
 ARG ARCH=x86_64
 ARG ALIYUN=false
 
