@@ -17,6 +17,20 @@ struct SampleTeeEvidence {
     init_data: String,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct Evidence {
+    pub svn: String,
+    pub report_data: String,
+    pub tpm_quote: TpmQuote,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct TpmQuote {
+    pub signature: String,
+    pub message: String,
+    pub pcrs: Vec<String>,
+}
+
 #[derive(Debug, Default)]
 pub struct Sample {}
 
@@ -28,17 +42,37 @@ impl Verifier for Sample {
         expected_report_data: &ReportData,
         expected_init_data_hash: &InitDataHash,
     ) -> Result<(TeeEvidenceParsedClaim, TeeClass)> {
-        let tee_evidence = serde_json::from_value::<SampleTeeEvidence>(evidence)
-            .context("Deserialize Quote failed.")?;
+        match serde_json::from_value::<Evidence>(evidence.clone()) {
+            std::result::Result::Ok(ev) => {
+                let tpm_quote = ev.tpm_quote;
+                // Example TPM logic: check pcrs, signature, message, etc.
+                debug!("Sample as TPM Evidence (nested): {:?}", tpm_quote);
+                // You can add more TPM-specific checks here as needed
+                // For demonstration, just return claims with "tpm" class
+                let claims = json!({
+                    "svn": ev.svn,
+                    "report_data": ev.report_data,
+                    "signature": tpm_quote.signature,
+                    "message": tpm_quote.message,
+                    "pcrs": tpm_quote.pcrs,
+                }) as TeeEvidenceParsedClaim;
+                return Ok((claims, "tpm".to_string()));
+            }
+            std::result::Result::Err(_) => {
+                // Fallback to Sample evidence
+                let tee_evidence = serde_json::from_value::<SampleTeeEvidence>(evidence)
+                    .context("Deserialize Quote failed.")?;
 
-        verify_tee_evidence(expected_report_data, expected_init_data_hash, &tee_evidence)
-            .await
-            .context("Evidence's identity verification error.")?;
+                verify_tee_evidence(expected_report_data, expected_init_data_hash, &tee_evidence)
+                    .await
+                    .context("Evidence's identity verification error.")?;
 
-        debug!("TEE-Evidence<sample>: {:?}", tee_evidence);
+                debug!("TEE-Evidence<sample>: {:?}", tee_evidence);
 
-        let claims = parse_tee_evidence(&tee_evidence)?;
-        Ok((claims, "cpu".to_string()))
+                let claims = parse_tee_evidence(&tee_evidence)?;
+                Ok((claims, "cpu".to_string()))
+            }
+        }
     }
 }
 
