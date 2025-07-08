@@ -66,3 +66,7 @@ tokio = { version = "1", features = ["full"], default-features = false }
 tempfile = "3.20.0"
 tonic = "0.12"
 tonic-build = "0.12"
+
+[patch.crates-io]
+kbs-types = { git = "https://github.com/bpradipt/kbs-types.git", branch = "tpm" }
+kbs_protocol = { git = "https://github.com/bpradipt/guest-components.git", branch = "tpm"}
