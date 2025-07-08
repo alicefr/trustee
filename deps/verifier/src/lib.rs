@@ -41,6 +41,9 @@ pub mod se;
 ))]
 pub mod intel_dcap;
 
+#[cfg(feature = "tpm-verifier")]
+pub mod tpm;
+
 pub fn to_verifier(tee: &Tee) -> Result<Box<dyn Verifier + Send + Sync>> {
     match tee {
         Tee::Sev => todo!(),
@@ -122,6 +125,16 @@ pub fn to_verifier(tee: &Tee) -> Result<Box<dyn Verifier + Send + Sync>> {
                     Ok(Box::<se::SeVerifier>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
                     bail!("feature `se-verifier` is not enabled for `verifier` crate.")
+                }
+            }
+        }
+
+        Tee::Tpm => {
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "tpm-verifier")] {
+                    Ok(Box::<tpm::TpmVerifier>::default() as Box<dyn Verifier + Send + Sync>)
+                } else {
+                    bail!("feature `tpm-verifier` is not enabled for `verifier` crate.")
                 }
             }
         }

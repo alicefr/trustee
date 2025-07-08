@@ -20,6 +20,9 @@ struct SampleTeeEvidence {
 #[derive(Debug, Default)]
 pub struct Sample {}
 
+#[cfg(feature = "tpm-verifier")]
+use crate::tpm::{TpmEvidence, verify_tpm_quote_signature, parse_tpm_evidence};
+
 #[async_trait]
 impl Verifier for Sample {
     async fn evaluate(
@@ -28,6 +31,26 @@ impl Verifier for Sample {
         expected_report_data: &ReportData,
         expected_init_data_hash: &InitDataHash,
     ) -> Result<(TeeEvidenceParsedClaim, TeeClass)> {
+        #[cfg(feature = "tpm-verifier")]
+        {
+            // If tpm-verifier is enabled, treat the sample as a TPM evidence for demonstration
+            let tpm_evidence = serde_json::from_value::<TpmEvidence>(evidence)
+                .context("Deserialize TPM Evidence failed.")?;
+            verify_tpm_quote_signature(&tpm_evidence)?;
+            if let ReportData::Value(expected_report_data) = expected_report_data {
+                if tpm_evidence.nonce != *expected_report_data {
+                    bail!("TPM quote nonce doesn't match expected report_data");
+                }
+            }
+            if let InitDataHash::Value(expected_init_data_hash) = expected_init_data_hash {
+                if tpm_evidence.pcrs.len() > 8 && tpm_evidence.pcrs[8] != *expected_init_data_hash {
+                    bail!("TPM PCR[8] doesn't match expected init_data_hash");
+                }
+            }
+            debug!("Sample as TPM Evidence: {:?}", tpm_evidence);
+            let claims = parse_tpm_evidence(&tpm_evidence)?;
+            return Ok((claims, "cpu".to_string()));
+        }
         let tee_evidence = serde_json::from_value::<SampleTeeEvidence>(evidence)
             .context("Deserialize Quote failed.")?;
 
