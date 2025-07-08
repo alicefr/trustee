@@ -214,6 +214,7 @@ impl AttestationService {
 
     async fn __auth(&self, request: &[u8]) -> anyhow::Result<HttpResponse> {
         let request: Request = serde_json::from_slice(request).context("deserialize Request")?;
+        println!("XXX {:?}", request);
         let version = Version::parse(&request.version).context("failed to parse KBS version")?;
         if !VERSION_REQ.matches(&version) {
             bail!(
@@ -257,6 +258,7 @@ impl AttestationService {
 
         let attestation: Attestation =
             serde_json::from_slice(attestation).context("deserialize Attestation")?;
+        println!("XXX {:Attestation}", request);
         let (tee, nonce) = {
             let session = self
                 .session_map

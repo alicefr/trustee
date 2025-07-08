@@ -10,6 +10,9 @@ pub mod sample_device;
 
 pub mod eventlog;
 
+#[cfg(feature = "tpm-verifier")]
+pub mod tpm;
+
 #[cfg(feature = "az-snp-vtpm-verifier")]
 pub mod az_snp_vtpm;
 
@@ -37,7 +40,8 @@ pub mod se;
 #[cfg(any(
     feature = "az-tdx-vtpm-verifier",
     feature = "tdx-verifier",
-    feature = "sgx-verifier"
+    feature = "sgx-verifier",
+    feature = "tpm-verifier"
 ))]
 pub mod intel_dcap;
 
@@ -122,6 +126,18 @@ pub fn to_verifier(tee: &Tee) -> Result<Box<dyn Verifier + Send + Sync>> {
                     Ok(Box::<se::SeVerifier>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
                     bail!("feature `se-verifier` is not enabled for `verifier` crate.")
+                }
+            }
+        }
+
+        Tee::HygonDcu => todo!(),
+
+        Tee::Tpm => {
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "tpm-verifier")] {
+                    Ok(Box::<tpm::TpmVerifier>::default() as Box<dyn Verifier + Send + Sync>)
+                } else {
+                    bail!("feature `tpm-verifier` is not enabled for `verifier` crate.")
                 }
             }
         }
