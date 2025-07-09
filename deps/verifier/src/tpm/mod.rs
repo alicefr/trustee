@@ -6,9 +6,15 @@
 use log::debug;
 use anyhow::*;
 use async_trait::async_trait;
+use base64::{engine::general_purpose, Engine};
+use rsa::traits::SignatureScheme;
+use rsa::{Pkcs1v15Sign, RsaPublicKey};
 use serde::Deserialize;
 use serde_json::json;
-use base64::Engine;
+use sha2::Digest;
+use sha2::Sha256;
+use tss_esapi::structures::{Attest, Public,Signature as TpmSignature};
+use tss_esapi::traits::UnMarshall;
 
 use super::*;
 
@@ -17,6 +23,7 @@ pub struct Evidence {
     pub svn: String,
     pub report_data: String,
     pub tpm_quote: TpmQuote,
+    pub ak_public: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -41,8 +48,8 @@ impl Verifier for TpmVerifier {
             .context("Deserialize TPM Evidence failed.")?;
         let tpm_quote = &ev.tpm_quote;
 
-        // TBD: Verify the quote signature using AK pubkey
-        verify_tpm_quote_signature(tpm_quote)?;
+        // 1. Verify the quote signature using AK pubkey
+        verify_tpm_quote_signature(tpm_quote, &ev.ak_public)?;
 
         // Verify the nonce matches expected report_data
         if let ReportData::Value(expected_report_data) = expected_report_data {
@@ -72,8 +79,65 @@ impl Verifier for TpmVerifier {
     }
 }
 
-pub fn verify_tpm_quote_signature(_tpm_quote: &TpmQuote) -> Result<()> {
-    // TODO: Implement actual TPM quote signature verification using AK pubkey 
+fn get_rsa_public_key(ak_public: &str) -> Result<RsaPublicKey> {
+    let pub_bytes = general_purpose::STANDARD
+        .decode(ak_public)
+        .context("Base64 decode of AK public failed")?;
+    let ak = Public::unmarshall(&pub_bytes)?;
+
+    match ak {
+        Public::Rsa {
+            ref unique,
+            ref parameters,
+            ..
+        } => {
+            let n = rsa::BigUint::from_bytes_be(unique.value());
+            let e = parameters.exponent().value();
+            let e = if e == 0 { 65537 } else { e }; // 0 means default 65537 in TPM
+            let e = rsa::BigUint::from(e);
+
+            RsaPublicKey::new(n, e).context("Failed to construct RSA public key")
+        }
+        _ => bail!("Unsupported AK key type"),
+    }
+}
+
+fn verify_rsa_signature(
+    rsa_public: &RsaPublicKey,
+    signature: &str,
+    message: &str,
+) -> Result<()> {
+    let sig_bytes = general_purpose::STANDARD
+        .decode(signature)
+        .context("Base64 decode of TPM quote signature failed")?;
+
+    let msg_bytes = general_purpose::STANDARD
+        .decode(message)
+        .context("Base64 decode of quote message failed")?;
+
+    let _attest = Attest::unmarshall(&msg_bytes)?;
+    let tpm_signature = TpmSignature::unmarshall(&sig_bytes)?;
+    if !matches!(tpm_signature, TpmSignature::RsaSsa(_)) {
+        bail!("Wrong Signature Scheme, expected RSASSA");
+    };
+
+    // Extract raw RSA signature from the TPM signature in TPM marshalled format, which includes a 6-byte header.
+    if sig_bytes.len() < 6 {
+        bail!("signature is too short");
+    }
+    let sig_bytes = &sig_bytes[6..];
+    let hashed = Sha256::digest(&msg_bytes);
+
+    let verifier = Pkcs1v15Sign::new::<Sha256>();
+    verifier
+        .verify(rsa_public, &hashed, sig_bytes)
+        .context("RSA signature verification failed")
+}
+
+pub fn verify_tpm_quote_signature(tpm_quote: &TpmQuote, ak_public: &String) -> Result<()> {
+    let rsa_public = get_rsa_public_key(ak_public)?;
+    verify_rsa_signature(&rsa_public, &tpm_quote.signature, &tpm_quote.message)?;
+    debug!("TPM quote signature is valid.");
     Ok(())
 }
 
